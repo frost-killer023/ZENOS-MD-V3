@@ -1,347 +1,401 @@
-const { readJson, writeJson, getDataPath, getSenderNumber } = require('../lib/helper');
-const path = require('path');
+const { readJson, writeJson, getDataPath, getSenderNumber, OWNER_NUMBER } = require('../lib/helper');
 
-function getGroups() {
-    return readJson(getDataPath('groups.json'));
-}
-function saveGroups(data) {
-    writeJson(getDataPath('groups.json'), data);
-}
-function getWarns() {
-    return readJson(getDataPath('warns.json'));
-}
-function saveWarns(data) {
-    writeJson(getDataPath('warns.json'), data);
+function getWarns() { return readJson(getDataPath('warns.json')); }
+function saveWarns(d) { writeJson(getDataPath('warns.json'), d); }
+function getGroups() { return readJson(getDataPath('groups.json')); }
+function saveGroups(d) { writeJson(getDataPath('groups.json'), d); }
+
+function requireGroup(sock, msg) {
+    if (!msg.key.remoteJid.endsWith('@g.us')) {
+        sock.sendMessage(msg.key.remoteJid, { text: '❌ Cette commande fonctionne uniquement dans un groupe!' });
+        return false;
+    }
+    return true;
 }
 
-async function isGroupAdmin(sock, groupId, jid) {
+async function getBotJid(sock) {
+    return sock.user?.id?.split(':')[0] + '@s.whatsapp.net' || `${OWNER_NUMBER}@s.whatsapp.net`;
+}
+
+async function getBotAdmin(sock, groupId) {
     try {
+        const botJid = await getBotJid(sock);
         const meta = await sock.groupMetadata(groupId);
-        return meta.participants.some(p => p.id === jid && (p.admin === 'admin' || p.admin === 'superadmin'));
+        return meta.participants.some(p => p.id === botJid && (p.admin === 'admin' || p.admin === 'superadmin'));
     } catch { return false; }
 }
 
+function extractMentioned(msg, args) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    if (mentioned.length) return mentioned[0];
+    const num = args[0]?.replace(/[^0-9]/g, '');
+    return num ? `${num}@s.whatsapp.net` : null;
+}
+
 const commands = {
-    tagall: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Commande disponible uniquement en groupe!' });
+    // ─── TAG TOUS ─────────────────────────────────────────────────────────────
+    tagall: async ({ sock, msg, body }) => {
+        if (!requireGroup(sock, msg)) return;
         try {
             const meta = await sock.groupMetadata(msg.key.remoteJid);
             const mentions = meta.participants.map(p => p.id);
-            const tags = meta.participants.map(p => `@${p.id.replace('@s.whatsapp.net', '')}`).join(' ');
-            await sock.sendMessage(msg.key.remoteJid, { text: `📢 *${meta.subject}* - Mention de tous les membres:\n${tags}`, mentions });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur lors du tag de tous les membres' });
+            const tags = meta.participants.map(p => `@${p.id.split('@')[0]}`).join(' ');
+            await sock.sendMessage(msg.key.remoteJid, {
+                text: `📢 *${meta.subject}*\n${body || 'Attention tout le monde!'}\n\n${tags}`,
+                mentions
+            });
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    tagadmin: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+    // ─── TAG ADMINS ───────────────────────────────────────────────────────────
+    tagadmin: async ({ sock, msg, body }) => {
+        if (!requireGroup(sock, msg)) return;
         try {
             const meta = await sock.groupMetadata(msg.key.remoteJid);
             const admins = meta.participants.filter(p => p.admin);
+            if (!admins.length) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Aucun admin trouvé' });
             const mentions = admins.map(p => p.id);
-            const tags = admins.map(p => `@${p.id.replace('@s.whatsapp.net', '')}`).join(' ');
-            await sock.sendMessage(msg.key.remoteJid, { text: `👑 *Administrateurs:*\n${tags}`, mentions });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur' });
+            const tags = admins.map(p => `@${p.id.split('@')[0]}`).join(' ');
+            await sock.sendMessage(msg.key.remoteJid, {
+                text: `👑 *Admins du groupe:*\n${body || ''}\n${tags}`,
+                mentions
+            });
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
+    // ─── TAG (avec message) ───────────────────────────────────────────────────
     tag: async ({ sock, msg, body }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+        if (!requireGroup(sock, msg)) return;
         try {
             const meta = await sock.groupMetadata(msg.key.remoteJid);
             const mentions = meta.participants.map(p => p.id);
-            await sock.sendMessage(msg.key.remoteJid, { text: body || '📢 Message du bot', mentions });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur tag' });
+            await sock.sendMessage(msg.key.remoteJid, { text: body || '📢 Message', mentions });
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    kick: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        if (!mentioned.length) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !kick @membre' });
+    // ─── ADD (ajouter un membre) ──────────────────────────────────────────────
+    add: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        if (!args[0]) return sock.sendMessage(gid, {
+            text: '❌ Usage: *!add <numéro>*\nEx: *!add 33612345678* (avec indicatif pays, sans +)'
+        });
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être *admin* du groupe pour ajouter des membres!' });
+
+        const num = args[0].replace(/[^0-9]/g, '');
+        const jid = `${num}@s.whatsapp.net`;
         try {
-            await sock.groupParticipantsUpdate(msg.key.remoteJid, mentioned, 'remove');
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ ${mentioned.length} membre(s) expulsé(s)` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Impossible d\'expulser (vérifiez les droits admin)' });
+            const result = await sock.groupParticipantsUpdate(gid, [jid], 'add');
+            const status = result?.[0]?.status;
+            if (status === '200' || status === 200) {
+                await sock.sendMessage(gid, { text: `✅ *+${num}* a été ajouté au groupe!`, mentions: [jid] });
+            } else if (status === '403') {
+                await sock.sendMessage(gid, { text: `❌ *+${num}* a restreint les ajouts à ses contacts.` });
+            } else if (status === '408') {
+                await sock.sendMessage(gid, { text: `❌ *+${num}* a un compte WhatsApp inexistant.` });
+            } else {
+                await sock.sendMessage(gid, { text: `⚠️ Résultat pour *+${num}*: code ${status}` });
+            }
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Impossible d'ajouter: ${e.message}` });
         }
     },
 
-    promote: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        if (!mentioned.length) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !promote @membre' });
+    // ─── KICK (supprimer un membre) ───────────────────────────────────────────
+    kick: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+
+        const target = extractMentioned(msg, args);
+        if (!target) return sock.sendMessage(gid, { text: '❌ Usage: *!kick @membre* ou *!kick numéro*' });
         try {
-            await sock.groupParticipantsUpdate(msg.key.remoteJid, mentioned, 'promote');
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Membres promus administrateurs` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur promotion' });
+            await sock.groupParticipantsUpdate(gid, [target], 'remove');
+            await sock.sendMessage(gid, { text: `🚪 @${target.split('@')[0]} a été retiré du groupe.`, mentions: [target] });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    demote: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        if (!mentioned.length) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !demote @membre' });
+    // ─── PROMOTE (passer admin) ───────────────────────────────────────────────
+    promote: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+
+        const target = extractMentioned(msg, args);
+        if (!target) return sock.sendMessage(gid, { text: '❌ Usage: *!promote @membre*' });
         try {
-            await sock.groupParticipantsUpdate(msg.key.remoteJid, mentioned, 'demote');
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Droits admin retirés` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur rétrogradation' });
+            await sock.groupParticipantsUpdate(gid, [target], 'promote');
+            await sock.sendMessage(gid, { text: `👑 @${target.split('@')[0]} est maintenant *admin*!`, mentions: [target] });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    gcreate: async ({ sock, msg, body }) => {
-        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !gcreate <nom_du_groupe>' });
+    // ─── DEMOTE (retirer admin) ───────────────────────────────────────────────
+    demote: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+
+        const target = extractMentioned(msg, args);
+        if (!target) return sock.sendMessage(gid, { text: '❌ Usage: *!demote @admin*' });
         try {
-            const group = await sock.groupCreate(body, [msg.key.remoteJid]);
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Groupe *${body}* créé!\n🆔 ID: ${group.id}` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur création groupe' });
+            await sock.groupParticipantsUpdate(gid, [target], 'demote');
+            await sock.sendMessage(gid, { text: `📉 @${target.split('@')[0]} n'est plus admin.`, mentions: [target] });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    gdesc: async ({ sock, msg, body }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !gdesc <description>' });
-        try {
-            await sock.groupUpdateDescription(msg.key.remoteJid, body);
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Description du groupe mise à jour` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur modification description' });
-        }
-    },
-
-    gname: async ({ sock, msg, body }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !gname <nouveau_nom>' });
-        try {
-            await sock.groupUpdateSubject(msg.key.remoteJid, body);
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Nom du groupe changé en: *${body}*` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur changement nom' });
-        }
-    },
-
-    close: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        try {
-            await sock.groupSettingUpdate(msg.key.remoteJid, 'announcement');
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔒 Groupe fermé - Seuls les admins peuvent écrire' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur fermeture groupe' });
-        }
-    },
-
-    open: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        try {
-            await sock.groupSettingUpdate(msg.key.remoteJid, 'not_announcement');
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔓 Groupe ouvert - Tout le monde peut écrire' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur ouverture groupe' });
-        }
-    },
-
-    lock: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        try {
-            await sock.groupSettingUpdate(msg.key.remoteJid, 'locked');
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔒 Seuls les admins peuvent modifier les paramètres' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur' });
-        }
-    },
-
-    unlock: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        try {
-            await sock.groupSettingUpdate(msg.key.remoteJid, 'unlocked');
-            await sock.sendMessage(msg.key.remoteJid, { text: '🔓 Tout le monde peut modifier les paramètres' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur' });
-        }
-    },
-
-    leave: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        await sock.sendMessage(msg.key.remoteJid, { text: '👋 Au revoir! ZENOS-MD quitte le groupe...' });
-        try {
-            await sock.groupLeave(msg.key.remoteJid);
-        } catch {}
-    },
-
+    // ─── LINK (lien d'invitation) ─────────────────────────────────────────────
     link: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin pour obtenir le lien!' });
         try {
-            const code = await sock.groupInviteCode(msg.key.remoteJid);
-            await sock.sendMessage(msg.key.remoteJid, { text: `🔗 *Lien d'invitation:*\nhttps://chat.whatsapp.com/${code}` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Impossible d\'obtenir le lien (admin requis)' });
+            const code = await sock.groupInviteCode(gid);
+            await sock.sendMessage(gid, { text: `🔗 *Lien d'invitation:*\nhttps://chat.whatsapp.com/${code}` });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    revoke: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+    // ─── REVOKE LINK ──────────────────────────────────────────────────────────
+    revokelink: async ({ sock, msg }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
         try {
-            await sock.groupRevokeInvite(msg.key.remoteJid);
-            await sock.sendMessage(msg.key.remoteJid, { text: '✅ Lien d\'invitation réinitialisé' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur réinitialisation lien' });
+            await sock.groupRevokeInvite(gid);
+            await sock.sendMessage(gid, { text: '✅ Lien d\'invitation révoqué. Un nouveau lien a été généré.' });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
+    // ─── GINFO (infos du groupe) ──────────────────────────────────────────────
     ginfo: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+        if (!requireGroup(sock, msg)) return;
         try {
             const meta = await sock.groupMetadata(msg.key.remoteJid);
-            const admins = meta.participants.filter(p => p.admin);
+            const admins = meta.participants.filter(p => p.admin).length;
             const created = new Date(meta.creation * 1000).toLocaleDateString('fr-FR');
             await sock.sendMessage(msg.key.remoteJid, {
-                text: `👥 *Informations du groupe*\n\n📛 Nom: ${meta.subject}\n👤 Créateur: @${meta.owner?.replace('@s.whatsapp.net', '')}\n📅 Créé le: ${created}\n👥 Membres: ${meta.participants.length}\n👑 Admins: ${admins.length}\n📝 Description: ${meta.desc || 'Aucune'}`,
-                mentions: [meta.owner]
+                text: `📊 *Infos du groupe*\n\n📛 Nom: ${meta.subject}\n👥 Membres: ${meta.participants.length}\n👑 Admins: ${admins}\n📅 Créé le: ${created}\n🔒 Annonces: ${meta.announce ? 'Oui' : 'Non'}\n🔐 Restreint: ${meta.restrict ? 'Oui' : 'Non'}\n📝 Description: ${meta.desc || 'Aucune'}`
             });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur récupération infos groupe' });
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
         }
     },
 
-    join: async ({ sock, msg, body }) => {
-        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !join <lien_groupe>' });
-        try {
-            const code = body.includes('chat.whatsapp.com/') ? body.split('chat.whatsapp.com/')[1] : body;
-            await sock.groupAcceptInvite(code);
-            await sock.sendMessage(msg.key.remoteJid, { text: '✅ Groupe rejoint avec succès!' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Impossible de rejoindre le groupe' });
-        }
-    },
-
-    warn: async ({ sock, msg, body }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        if (!mentioned.length) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !warn @membre [raison]' });
-        const warns = getWarns();
-        const gid = msg.key.remoteJid;
-        const reason = body.replace(/@\d+/g, '').trim() || 'Comportement inapproprié';
-        for (const jid of mentioned) {
-            if (!warns[gid]) warns[gid] = {};
-            if (!warns[gid][jid]) warns[gid][jid] = [];
-            warns[gid][jid].push({ reason, date: new Date().toISOString() });
-            const count = warns[gid][jid].length;
-            saveWarns(warns);
-            if (count >= 3) {
-                try {
-                    await sock.groupParticipantsUpdate(gid, [jid], 'remove');
-                    await sock.sendMessage(gid, { text: `⚠️ @${jid.replace('@s.whatsapp.net', '')} a reçu 3 avertissements → Expulsé automatiquement!`, mentions: [jid] });
-                    warns[gid][jid] = [];
-                    saveWarns(warns);
-                } catch {}
-            } else {
-                await sock.sendMessage(gid, { text: `⚠️ *Avertissement ${count}/3* pour @${jid.replace('@s.whatsapp.net', '')}\nRaison: ${reason}`, mentions: [jid] });
-            }
-        }
-    },
-
-    antilink: async ({ sock, msg, args }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        const groups = getGroups();
-        const gid = msg.key.remoteJid;
-        if (!groups[gid]) groups[gid] = {};
-        const state = args[0] === 'on';
-        groups[gid].antilink = state;
-        saveGroups(groups);
-        await sock.sendMessage(gid, { text: `🔗 Anti-lien: ${state ? '✅ Activé' : '❌ Désactivé'}` });
-    },
-
-    antispam: async ({ sock, msg, args }) => {
-        const groups = getGroups();
-        const gid = msg.key.remoteJid;
-        if (!groups[gid]) groups[gid] = {};
-        const state = args[0] === 'on';
-        groups[gid].antispam = state;
-        saveGroups(groups);
-        await sock.sendMessage(gid, { text: `🛡️ Anti-spam: ${state ? '✅ Activé' : '❌ Désactivé'}` });
-    },
-
-    welcome: async ({ sock, msg, args }) => {
-        const groups = getGroups();
-        const gid = msg.key.remoteJid;
-        if (!groups[gid]) groups[gid] = {};
-        const state = args[0] === 'on';
-        const welcomeMsg = args.slice(1).join(' ') || '👋 Bienvenue {name} dans le groupe {group}!';
-        groups[gid].welcome = state;
-        groups[gid].welcomeMsg = welcomeMsg;
-        saveGroups(groups);
-        await sock.sendMessage(gid, { text: `👋 Message de bienvenue: ${state ? '✅ Activé' : '❌ Désactivé'}\n📝 Message: ${welcomeMsg}` });
-    },
-
-    goodbye: async ({ sock, msg, args }) => {
-        const groups = getGroups();
-        const gid = msg.key.remoteJid;
-        if (!groups[gid]) groups[gid] = {};
-        const state = args[0] === 'on';
-        const byeMsg = args.slice(1).join(' ') || '👋 Au revoir {name}!';
-        groups[gid].goodbye = state;
-        groups[gid].goodbyeMsg = byeMsg;
-        saveGroups(groups);
-        await sock.sendMessage(gid, { text: `👋 Message d'adieu: ${state ? '✅ Activé' : '❌ Désactivé'}` });
-    },
-
-    kickall: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
+    // ─── GMEMBERS (liste des membres) ────────────────────────────────────────
+    gmembers: async ({ sock, msg }) => {
+        if (!requireGroup(sock, msg)) return;
         try {
             const meta = await sock.groupMetadata(msg.key.remoteJid);
-            const nonAdmins = meta.participants.filter(p => !p.admin).map(p => p.id);
-            await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Expulsion de ${nonAdmins.length} membres non-admins...` });
-            for (const jid of nonAdmins) {
-                try { await sock.groupParticipantsUpdate(msg.key.remoteJid, [jid], 'remove'); } catch {}
-                await new Promise(r => setTimeout(r, 500));
-            }
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ ${nonAdmins.length} membres expulsés` });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur kickall' });
-        }
-    },
-
-    getpp: async ({ sock, msg }) => {
-        if (!msg.key.remoteJid.endsWith('@g.us')) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Groupe uniquement!' });
-        try {
-            const ppUrl = await sock.profilePictureUrl(msg.key.remoteJid, 'image');
-            const axios = require('axios');
-            const res = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 10000 });
-            await sock.sendMessage(msg.key.remoteJid, { image: Buffer.from(res.data), caption: '🖼️ Photo de profil du groupe' });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Pas de photo de profil ou groupe' });
-        }
-    },
-
-    poll: async ({ sock, msg, body }) => {
-        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !poll <question> <option1|option2|...>' });
-        const [question, ...rest] = body.split(' ');
-        const optStr = rest.join(' ');
-        const options = optStr.split('|').map(o => o.trim()).filter(Boolean);
-        if (options.length < 2) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Au moins 2 options séparées par |' });
-        try {
+            const list = meta.participants.map((p, i) => {
+                const num = p.id.split('@')[0];
+                const role = p.admin === 'superadmin' ? '👑' : p.admin === 'admin' ? '⭐' : '👤';
+                return `${role} ${i + 1}. +${num}`;
+            }).join('\n');
             await sock.sendMessage(msg.key.remoteJid, {
-                poll: { name: question, values: options, selectableCount: options.length }
+                text: `👥 *Membres de ${meta.subject}* (${meta.participants.length})\n\n${list}\n\n👑 Créateur | ⭐ Admin | 👤 Membre`
             });
-        } catch {
-            await sock.sendMessage(msg.key.remoteJid, { text: '❌ Erreur création sondage' });
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
         }
+    },
+
+    // ─── MUTE (fermer le groupe) ──────────────────────────────────────────────
+    mute: async ({ sock, msg }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+        try {
+            await sock.groupSettingUpdate(gid, 'announcement');
+            await sock.sendMessage(gid, { text: '🔇 *Groupe muté* — Seuls les admins peuvent écrire.' });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
+        }
+    },
+
+    // ─── UNMUTE (ouvrir le groupe) ────────────────────────────────────────────
+    unmute: async ({ sock, msg }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+        try {
+            await sock.groupSettingUpdate(gid, 'not_announcement');
+            await sock.sendMessage(gid, { text: '🔊 *Groupe ouvert* — Tout le monde peut écrire.' });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
+        }
+    },
+
+    // ─── GNAME (changer le nom) ───────────────────────────────────────────────
+    gname: async ({ sock, msg, body }) => {
+        if (!requireGroup(sock, msg)) return;
+        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !gname <nouveau_nom>' });
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+        try {
+            await sock.groupUpdateSubject(gid, body);
+            await sock.sendMessage(gid, { text: `✅ Nom du groupe changé en: *${body}*` });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
+        }
+    },
+
+    // ─── GDESC (changer la description) ──────────────────────────────────────
+    gdesc: async ({ sock, msg, body }) => {
+        if (!requireGroup(sock, msg)) return;
+        if (!body) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage: !gdesc <description>' });
+        const gid = msg.key.remoteJid;
+        const isAdmin = await getBotAdmin(sock, gid);
+        if (!isAdmin) return sock.sendMessage(gid, { text: '❌ Le bot doit être admin!' });
+        try {
+            await sock.groupUpdateDescription(gid, body);
+            await sock.sendMessage(gid, { text: `✅ Description du groupe mise à jour.` });
+        } catch (e) {
+            await sock.sendMessage(gid, { text: `❌ Erreur: ${e.message}` });
+        }
+    },
+
+    // ─── WARN ─────────────────────────────────────────────────────────────────
+    warn: async ({ sock, msg, args, body }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const target = extractMentioned(msg, args);
+        if (!target) return sock.sendMessage(gid, { text: '❌ Usage: !warn @membre [raison]' });
+        const warns = getWarns();
+        if (!warns[gid]) warns[gid] = {};
+        if (!warns[gid][target]) warns[gid][target] = 0;
+        warns[gid][target]++;
+        saveWarns(warns);
+        const count = warns[gid][target];
+        const reason = body.replace(args[0] || '', '').trim() || 'Non précisée';
+        await sock.sendMessage(gid, {
+            text: `⚠️ *AVERTISSEMENT*\n\n👤 @${target.split('@')[0]}\n📝 Raison: ${reason}\n🔢 Avertissements: ${count}/3${count >= 3 ? '\n\n🔴 Limite atteinte!' : ''}`,
+            mentions: [target]
+        });
+        if (count >= 3) {
+            warns[gid][target] = 0;
+            saveWarns(warns);
+            const isAdmin = await getBotAdmin(sock, gid);
+            if (isAdmin) {
+                try {
+                    await sock.groupParticipantsUpdate(gid, [target], 'remove');
+                    await sock.sendMessage(gid, { text: `🚪 @${target.split('@')[0]} a été expulsé (3 avertissements).`, mentions: [target] });
+                } catch {}
+            }
+        }
+    },
+
+    // ─── WARNS (voir les warns) ───────────────────────────────────────────────
+    warns: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const warns = getWarns();
+        const groupWarns = warns[gid] || {};
+        const target = extractMentioned(msg, args);
+        if (target) {
+            const count = groupWarns[target] || 0;
+            return sock.sendMessage(gid, { text: `⚠️ @${target.split('@')[0]} a *${count}* avertissement(s).`, mentions: [target] });
+        }
+        if (!Object.keys(groupWarns).length) return sock.sendMessage(gid, { text: '✅ Aucun avertissement dans ce groupe.' });
+        const list = Object.entries(groupWarns).map(([jid, n]) => `• +${jid.split('@')[0]}: ${n} warn(s)`).join('\n');
+        await sock.sendMessage(gid, { text: `📋 *Avertissements du groupe:*\n\n${list}` });
+    },
+
+    // ─── CLEARWARN ────────────────────────────────────────────────────────────
+    clearwarn: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const target = extractMentioned(msg, args);
+        if (!target) return sock.sendMessage(gid, { text: '❌ Usage: !clearwarn @membre' });
+        const warns = getWarns();
+        if (warns[gid]) { delete warns[gid][target]; saveWarns(warns); }
+        await sock.sendMessage(gid, { text: `✅ Avertissements de @${target.split('@')[0]} effacés.`, mentions: [target] });
+    },
+
+    // ─── ANTILINK (toggle) ────────────────────────────────────────────────────
+    antilink: async ({ sock, msg, args }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const groups = getGroups();
+        if (!groups[gid]) groups[gid] = {};
+        const enable = args[0]?.toLowerCase() !== 'off';
+        groups[gid].antilink = enable;
+        saveGroups(groups);
+        await sock.sendMessage(gid, { text: `🔗 Anti-lien: *${enable ? '✅ ACTIVÉ' : '❌ DÉSACTIVÉ'}*` });
+    },
+
+    // ─── WELCOME MESSAGE ──────────────────────────────────────────────────────
+    welcome: async ({ sock, msg, args, body }) => {
+        if (!requireGroup(sock, msg)) return;
+        const gid = msg.key.remoteJid;
+        const groups = getGroups();
+        if (!groups[gid]) groups[gid] = {};
+        if (args[0]?.toLowerCase() === 'off') {
+            groups[gid].welcome = false;
+            saveGroups(groups);
+            return sock.sendMessage(gid, { text: '👋 Message de bienvenue désactivé.' });
+        }
+        const text = body.replace(/^(on|off)?\s*/i, '').trim() || '👋 Bienvenue @participant dans le groupe!';
+        groups[gid].welcome = true;
+        groups[gid].welcomeMsg = text;
+        saveGroups(groups);
+        await sock.sendMessage(gid, { text: `✅ Message de bienvenue activé:\n\n_${text}_` });
+    },
+
+    // ─── QUITTER LE GROUPE ────────────────────────────────────────────────────
+    quitter: async ({ sock, msg }) => {
+        if (!requireGroup(sock, msg)) return;
+        await sock.sendMessage(msg.key.remoteJid, { text: '👋 Au revoir! Le bot quitte le groupe...' });
+        try {
+            await sock.groupLeave(msg.key.remoteJid);
+        } catch (e) {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erreur: ${e.message}` });
+        }
+    },
+
+    // ─── MENU GROUPE ──────────────────────────────────────────────────────────
+    groupe: async ({ sock, msg, prefix }) => {
+        await sock.sendMessage(msg.key.remoteJid, {
+            text: `👥 *COMMANDES GROUPE*\n${'━'.repeat(30)}\n\n➕ *Gestion membres*\n• *${prefix}add <numéro>* — Ajouter\n• *${prefix}kick @membre* — Expulser\n• *${prefix}promote @membre* — Passer admin\n• *${prefix}demote @admin* — Retirer admin\n\n📢 *Tags*\n• *${prefix}tagall [msg]* — Mentionner tout le monde\n• *${prefix}tagadmin [msg]* — Mentionner les admins\n• *${prefix}tag <msg>* — Tag + message\n\n⚙️ *Paramètres (admin requis)*\n• *${prefix}mute* — Fermer le groupe\n• *${prefix}unmute* — Ouvrir le groupe\n• *${prefix}gname <nom>* — Renommer\n• *${prefix}gdesc <desc>* — Description\n• *${prefix}link* — Lien d'invitation\n• *${prefix}revokelink* — Révoquer le lien\n• *${prefix}antilink on/off* — Anti-liens\n• *${prefix}welcome <msg>* — Msg bienvenue\n• *${prefix}quitter* — Quitter le groupe\n\n⚠️ *Avertissements*\n• *${prefix}warn @membre [raison]*\n• *${prefix}warns [@membre]*\n• *${prefix}clearwarn @membre*\n\nℹ️ *Infos*\n• *${prefix}ginfo* — Informations groupe\n• *${prefix}gmembers* — Liste membres`
+        });
     }
 };
 
 const aliases = {
-    'htag': 'tag',
-    'hidetag': 'tag',
-    'gpp': 'getpp',
-    'upp': 'updatepp',
-    'rpp': 'removepp',
-    'kickall2': 'kickall'
+    'remove':    'kick',
+    'expulser':  'kick',
+    'ajouter':   'add',
+    'admins':    'tagadmin',
+    'fermer':    'mute',
+    'ouvrir':    'unmute',
+    'nom':       'gname',
+    'desc':      'gdesc',
+    'membres':   'gmembers',
+    'infos':     'ginfo',
+    'invitelink': 'link'
 };
 
 module.exports = { commands, aliases };
