@@ -1,157 +1,94 @@
 const fs = require('fs-extra');
 const path = require('path');
-const { formatUptime } = require('../lib/helper');
+const { formatUptime, OWNER_NUMBER } = require('../lib/helper');
 
 const settingsPath = path.join(__dirname, '..', 'data', 'settings.json');
 
 function getSettings() {
-    try { return fs.readJsonSync(settingsPath); } catch { return { theme: 'default', prefix: '!', botName: 'ZENOS-MD-V1' }; }
+    try {
+        return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch {
+        return { theme: 'galaxy', prefix: '!', botName: 'ZENOS-MD-V1' };
+    }
 }
 function saveSettings(data) {
     fs.writeJsonSync(settingsPath, data, { spaces: 2 });
 }
 
 const THEMES = {
-    default: {
-        name: 'Default',
-        emoji: '⚪',
+    galaxy: {
+        name: 'Galaxy ✨',
+        emoji: '🌌',
         renderMenu: (categories, botInfo) => {
-            const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `╔══════════════════════════╗
-║      🤖 ${botName}      
-╠══════════════════════════╣
-║ Préfixe : ${prefix}              ║
-║ Mode    : Privé 🔒       ║
-║ Cmds    : ${cmdCount}           ║
-║ Uptime  : ${uptime}      ║
-╠══════════════════════════╣
-║ 📌 CATÉGORIES            ║
-${categories.map(c => `║ ${c}`.padEnd(28) + '║').join('\n')}
-╚══════════════════════════╝
-Tape *${prefix}menu <cat>* pour les cmds`;
+            const { botName, prefix, uptime, cmdCount, ownerNum } = botInfo;
+            const catLines = (Array.isArray(categories) ? categories : [])
+                .map(c => `│ ${c}`).join('\n');
+            return `╭──────────────────────────────╮\n│  ✨🌌  Z E N O S - M D  🌌✨  │\n│       ꧁  V E R S I O N  1  ꧂  │\n╰──────────────────────────────╯\n🌟━━━━━━━━━━━━━━━━━━━━━━━🌟\n│ 🤖 Bot    : ${botName}\n│ 👑 Owner  : +${ownerNum || OWNER_NUMBER}\n│ ⚡ Prefix : ${prefix}\n│ 📡 Status : En ligne ✅\n│ ⏱️ Uptime : ${uptime}\n│ 🧩 Cmds   : ${cmdCount} commandes\n🌟━━━━━━━━━━━━━━━━━━━━━━━🌟\n\n✦ ☄️  C A T É G O R I E S  ☄️ ✦\n\n${catLines}\n\n✨━━━━━━━━━━━━━━━━━━━━━━━✨\n💡 Tape *${prefix}menu [catégorie]*\n   Ex: *${prefix}menu fun* · *${prefix}menu ia*\n_*   BY : ANOS.*_\n✨━━━━━━━━━━━━━━━━━━━━━━━✨\n   🌌 *ZENOS-MD-V1* • 24/7 Online 🚀`;
         }
     },
 
     neon: {
-        name: 'Neon',
+        name: 'Neon 💜',
         emoji: '💜',
         renderMenu: (categories, botInfo) => {
-            const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃  🌌 ${botName} 🌌  ┃
-┣━━━━━━━━━━━━━━━━━━━━━━━━━━┫
-┃ ⚡ Préfixe : ${prefix}           ┃
-┃ 🔮 Mode    : Privé        ┃
-┃ ✨ Cmds    : ${cmdCount}          ┃
-┃ ⏰ Uptime  : ${uptime}    ┃
-┣━━━━━━━━━━━━━━━━━━━━━━━━━━┫
-┃ 🌟 CATÉGORIES             ┃
-${categories.map(c => `┃ › ${c}`).join('\n')}
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-💜 *${prefix}menu <cat>* pour voir les cmds`;
+            const { botName, prefix, uptime, cmdCount, ownerNum } = botInfo;
+            const catLines = (Array.isArray(categories) ? categories : [])
+                .map(c => `┃ ▸ ${c}`).join('\n');
+            return `┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n┃  🌌 *${botName}* 🌌\n┣━━━━━━━━━━━━━━━━━━━━━━━━━━┫\n┃ ⚡ Préfixe : ${prefix}\n┃ 🔮 Mode    : Privé 🔒\n┃ 🧩 Cmds    : ${cmdCount}\n┃ ⏰ Uptime  : ${uptime}\n┣━━━━━━━━━━━━━━━━━━━━━━━━━━┫\n┃ 🌟 *CATÉGORIES*\n${catLines}\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n💜 *${prefix}menu <cat>* · By ANOS`;
         }
     },
 
-    galaxy: {
-        name: 'Galaxy',
-        emoji: '🌌',
+    default: {
+        name: 'Default ⚪',
+        emoji: '⚪',
         renderMenu: (categories, botInfo) => {
             const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `✦ ✧ ✦ ✧ ✦ GALAXY ✦ ✧ ✦ ✧ ✦
-🌌 *${botName}* 🌌
-✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦
-◈ Préfixe : ${prefix}
-◈ Mode    : 🔒 Privé
-◈ Cmds    : ${cmdCount}
-◈ Uptime  : ${uptime}
-✦ ✧ ✦ ✧ ✦ MENU ✦ ✧ ✦ ✧ ✦
-${categories.map(c => `⋆ ${c}`).join('\n')}
-✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦
-🌌 *${prefix}menu <cat>* pour les cmds`;
+            const catLines = (Array.isArray(categories) ? categories : [])
+                .map(c => `║ • ${c}`).join('\n');
+            return `╔══════════════════════════╗\n║      🤖 ${botName}\n╠══════════════════════════╣\n║ Préfixe : ${prefix}\n║ Mode    : Privé 🔒\n║ Cmds    : ${cmdCount}\n║ Uptime  : ${uptime}\n╠══════════════════════════╣\n║ 📌 CATÉGORIES\n${catLines}\n╚══════════════════════════╝\n*${prefix}menu <cat>*`;
         }
     },
 
     minimal: {
-        name: 'Minimal',
+        name: 'Minimal ⬜',
         emoji: '⬜',
         renderMenu: (categories, botInfo) => {
             const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `${botName}
-─────────────────────
-prefix: ${prefix} | mode: privé | cmds: ${cmdCount}
-uptime: ${uptime}
-─────────────────────
-catégories:
-${categories.map(c => `  · ${c}`).join('\n')}
-─────────────────────
-${prefix}menu <catégorie>`;
+            const catLines = (Array.isArray(categories) ? categories : []).map(c => `  · ${c}`).join('\n');
+            return `${botName}\n─────────────────────\nprefix: ${prefix} | mode: privé | cmds: ${cmdCount}\nuptime: ${uptime}\n─────────────────────\ncatégories:\n${catLines}\n─────────────────────\n${prefix}menu <catégorie>`;
         }
     },
 
     fire: {
-        name: 'Fire',
+        name: 'Fire 🔥',
         emoji: '🔥',
         renderMenu: (categories, botInfo) => {
             const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-🔥  *${botName}*  🔥
-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-🔥 Préfixe : ${prefix}
-🔥 Mode    : Privé 🔒
-🔥 Cmds    : ${cmdCount}
-🔥 Uptime  : ${uptime}
-🔥🔥🔥 CATÉGORIES 🔥🔥🔥
-${categories.map(c => `🔥 ${c}`).join('\n')}
-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-*${prefix}menu <cat>*`;
+            const catLines = (Array.isArray(categories) ? categories : []).map(c => `🔥 ${c}`).join('\n');
+            return `🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n🔥  *${botName}*  🔥\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n🔥 Préfixe : ${prefix}\n🔥 Mode    : Privé 🔒\n🔥 Cmds    : ${cmdCount}\n🔥 Uptime  : ${uptime}\n🔥🔥🔥 CATÉGORIES 🔥🔥🔥\n${catLines}\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n*${prefix}menu <cat>*`;
         }
     },
 
     ocean: {
-        name: 'Ocean',
+        name: 'Ocean 🌊',
         emoji: '🌊',
         renderMenu: (categories, botInfo) => {
             const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `🌊〰️〰️〰️〰️〰️〰️〰️🌊
-🐋 *${botName}* 🐋
-🌊〰️〰️〰️〰️〰️〰️〰️🌊
-🐠 Préfixe : ${prefix}
-🐠 Mode    : Privé 🔒
-🐠 Cmds    : ${cmdCount}
-🐠 Uptime  : ${uptime}
-🌊〰️ CATÉGORIES 〰️🌊
-${categories.map(c => `🐟 ${c}`).join('\n')}
-🌊〰️〰️〰️〰️〰️〰️〰️🌊
-*${prefix}menu <cat>*`;
+            const catLines = (Array.isArray(categories) ? categories : []).map(c => `🐟 ${c}`).join('\n');
+            return `🌊〰️〰️〰️〰️〰️〰️〰️🌊\n🐋 *${botName}* 🐋\n🌊〰️〰️〰️〰️〰️〰️〰️🌊\n🐠 Préfixe : ${prefix}\n🐠 Mode    : Privé 🔒\n🐠 Cmds    : ${cmdCount}\n🐠 Uptime  : ${uptime}\n🌊〰️ CATÉGORIES 〰️🌊\n${catLines}\n🌊〰️〰️〰️〰️〰️〰️〰️🌊\n*${prefix}menu <cat>*`;
         }
     },
 
     matrix: {
-        name: 'Matrix',
+        name: 'Matrix 💚',
         emoji: '💚',
         renderMenu: (categories, botInfo) => {
             const { botName, prefix, uptime, cmdCount } = botInfo;
-            return `> 01001110 01000101 01001111 01001110
-> *${botName}* [SYSTEM_ONLINE]
-> ─────────────────────────
-> PREFIX: ${prefix} | SECURE_MODE: TRUE
-> COMMANDS: ${cmdCount} | UPTIME: ${uptime}
-> ─────────────────────────
-> [MODULES_LOADED]
-${categories.map(c => `> [+] ${c}`).join('\n')}
-> ─────────────────────────
-> CMD: ${prefix}menu <module>`;
+            const catLines = (Array.isArray(categories) ? categories : []).map(c => `> [+] ${c}`).join('\n');
+            return `> 01001110 01000101 01001111 01001110\n> *${botName}* [SYSTEM_ONLINE]\n> ─────────────────────────\n> PREFIX: ${prefix} | SECURE_MODE: TRUE\n> COMMANDS: ${cmdCount} | UPTIME: ${uptime}\n> ─────────────────────────\n> [MODULES_LOADED]\n${catLines}\n> ─────────────────────────\n> CMD: ${prefix}menu <module>`;
         }
     }
 };
-
-const allCategories = [
-    '1️⃣  Général', '2️⃣  Fun & Jeux', '3️⃣  Médias',
-    '4️⃣  Utilitaires', '5️⃣  Informations', '6️⃣  Administration',
-    '7️⃣  Confidentialité', '8️⃣  Conversion', '9️⃣  Groupe',
-    '🔟  IA & Intelligence', '1️⃣1️⃣ FX Audio', '1️⃣2️⃣ Image Edits',
-    '1️⃣3️⃣ Logos', '1️⃣4️⃣ Outils', '1️⃣5️⃣ Économie'
-];
 
 const commands = {
     theme: async ({ sock, msg, args, startTime, botName, prefix }) => {
@@ -160,38 +97,45 @@ const commands = {
 
         if (!sub) {
             const list = Object.entries(THEMES).map(([k, v]) => `${v.emoji} *${k}* — ${v.name}`).join('\n');
-            await sock.sendMessage(msg.key.remoteJid, { text: `🎨 *Thèmes disponibles:*\n\n${list}\n\n• *!theme set <nom>* → Activer\n• *!theme preview <nom>* → Aperçu\n• *!theme reset* → Par défaut\n\n📌 Actuel: *${settings.theme}*` });
-            return;
+            return sock.sendMessage(msg.key.remoteJid, {
+                text: `🎨 *Thèmes disponibles:*\n\n${list}\n\n• *!theme set <nom>* → Activer\n• *!theme preview <nom>* → Aperçu\n• *!theme reset* → Par défaut (galaxy)\n\n📌 Actuel: *${settings.theme}*`
+            });
         }
 
         if (sub === 'set' && args[1]) {
-            const themeName = args[1].toLowerCase();
-            if (!THEMES[themeName]) return sock.sendMessage(msg.key.remoteJid, { text: `❌ Thème introuvable. Tape !theme pour voir la liste.` });
-            settings.theme = themeName;
+            const name = args[1].toLowerCase();
+            if (!THEMES[name]) return sock.sendMessage(msg.key.remoteJid, { text: `❌ Thème "${name}" introuvable. Tape *!theme* pour voir la liste.` });
+            settings.theme = name;
             saveSettings(settings);
-            await sock.sendMessage(msg.key.remoteJid, { text: `✅ Thème *${themeName}* activé ! Tape !menu pour voir le résultat.` });
-            return;
+            return sock.sendMessage(msg.key.remoteJid, { text: `✅ Thème *${name}* activé !\nTape *!menu* pour voir le résultat.` });
         }
 
         if (sub === 'reset') {
-            settings.theme = 'default';
+            settings.theme = 'galaxy';
             saveSettings(settings);
-            await sock.sendMessage(msg.key.remoteJid, { text: '✅ Thème remis par défaut.' });
-            return;
+            return sock.sendMessage(msg.key.remoteJid, { text: '✅ Thème remis à *galaxy* (défaut).' });
         }
 
         if (sub === 'preview' && args[1]) {
-            const themeName = args[1].toLowerCase();
-            const theme = THEMES[themeName];
-            if (!theme) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Thème introuvable. Tape !theme pour voir la liste.' });
+            const name = args[1].toLowerCase();
+            const theme = THEMES[name];
+            if (!theme) return sock.sendMessage(msg.key.remoteJid, { text: '❌ Thème introuvable.' });
             const uptime = formatUptime(Math.floor((Date.now() - (global.startTime || Date.now())) / 1000));
-            const menu = theme.renderMenu(allCategories, { botName: settings.botName || botName, prefix: settings.prefix || prefix, uptime, cmdCount: '150+' });
-            await sock.sendMessage(msg.key.remoteJid, { text: `🔍 *Aperçu thème: ${themeName}*\n\n${menu}` });
-            return;
+            const exampleCats = ['📌 Général  ·  11 cmds', '🎭 Fun  ·  16 cmds', '🤖 IA  ·  7 cmds'];
+            const preview = theme.renderMenu(exampleCats, {
+                botName: settings.botName || botName,
+                prefix: settings.prefix || prefix,
+                uptime,
+                cmdCount: '247',
+                ownerNum: OWNER_NUMBER
+            });
+            return sock.sendMessage(msg.key.remoteJid, { text: `🔍 *Aperçu: ${name}*\n\n${preview}` });
         }
 
-        await sock.sendMessage(msg.key.remoteJid, { text: '❌ Usage:\n• !theme (liste)\n• !theme set <nom>\n• !theme preview <nom>\n• !theme reset' });
+        await sock.sendMessage(msg.key.remoteJid, {
+            text: '❌ Usage:\n• *!theme* — liste\n• *!theme set <nom>* — activer\n• *!theme preview <nom>* — aperçu\n• *!theme reset* — galaxy par défaut'
+        });
     }
 };
 
-module.exports = { commands, aliases: {}, THEMES, allCategories };
+module.exports = { commands, aliases: {}, THEMES };
