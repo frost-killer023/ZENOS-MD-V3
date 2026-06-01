@@ -138,7 +138,7 @@ async function connectToWhatsApp() {
                 console.log('╠══════════════════════════════════════════╣');
                 console.log(`║  CODE :  ${fmt.padEnd(32)}║`);
                 console.log('╠══════════════════════════════════════════╣');
-                console.log(`║  Numéro: +${phoneNumber.padEnd(31)}║`);
+                console.log(`║  Numéro: ${phoneNumber.padEnd(31)}║`);
                 console.log('║  Expiration: ~60 secondes                ║');
                 console.log('╠══════════════════════════════════════════╣');
                 console.log('║  WhatsApp > ⚙️ > Appareils connectés    ║');
